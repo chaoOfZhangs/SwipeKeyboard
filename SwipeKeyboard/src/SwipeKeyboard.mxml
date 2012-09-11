@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009"
+					   xmlns:s="library://ns.adobe.com/flex/spark"
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   width="850" height="500" xmlns:local="*"
+					   creationComplete="windowedapplication1_creationCompleteHandler(event)" xmlns:components="components.*">
+	
+	<fx:Script>
+		<![CDATA[
+			import base.dictionary.WordFrequencyList;
+			import base.drawing.DrawingArea;
+			import flash.utils.clearInterval;
+			import flash.utils.getTimer;
+			import flash.utils.setTimeout;
+			
+			import mx.events.FlexEvent;
+			import mx.rpc.mxml.Concurrency;
+			
+			import org.osmf.events.TimeEvent;
+			
+			import spark.primitives.Ellipse;
+			
+			import base.utils.nodes.Node;
+			import base.utils.PriorityQueue;
+			import base.utils.Trie;
+			import base.utils.nodes.TrieNode;
+			
+			private static const swipeMode:Boolean = true;
+			
+			private var isMouseDown:Boolean;
+			private var isCurrent:Boolean;
+			private var alreadyRead:Boolean;
+			private var prevMousePosition:Array;
+			
+			private var brush:DrawingArea;
+			private var dict:WordFrequencyList;
+			
+			private var timeoutID:Number;
+			
+			private function onMouseUp(event:Event):void {
+				isMouseDown = false;
+				isCurrent = false;
+				brush.clear();
+			}
+			
+			private function onMouseDown(event:Event):void {
+				if (!isCurrent) {
+					clearLettersRead();
+				}
+				isMouseDown = true;
+				brush.start(event.currentTarget.mouseX, event.currentTarget.mouseY);
+			}
+			
+			private function onMouseMove(event:Event):void {
+				if (isMouseDown) {
+					brush.draw(event.currentTarget.mouseX, event.currentTarget.mouseY);
+				}
+			}
+			
+			private function onMouseRollOut(event:Event):void {
+				isMouseDown = false;
+				isCurrent = false;
+				brush.clear();
+			}
+			
+			private function onMouseDownKey(event:Event):void {
+				clearLettersRead();
+				isMouseDown = true;
+				displayLettersRead(event.currentTarget.text);
+				isCurrent = true;
+				alreadyRead = true;
+			}
+			
+			private function onMouseUpKey(event:Event):void {
+				if (isMouseDown && !alreadyRead) {
+					displayLettersRead(event.currentTarget.text);
+					isMouseDown = false;
+					isCurrent = false;
+					clearInterval(timeoutID);
+				}
+				alreadyRead = false;
+			}
+			
+			private function onMouseOverKey(event:Event):void {
+				if (isMouseDown) {
+					if (swipeMode) {
+					prevMousePosition[0] = event.currentTarget.mouseX;
+					prevMousePosition[1] = event.currentTarget.mouseY; 
+					} else {
+						timeoutID = setInterval(displayLettersRead, 1000, event.currentTarget.text);
+					}
+				}
+			}
+			
+			private function onMouseOutKey(event:Event):void {
+				if (isMouseDown && !alreadyRead) {
+					if (swipeMode) {
+						var outMousePosition:Array = new Array(event.currentTarget.mouseX, event.currentTarget.mouseY);
+						var center:Array = new Array(event.currentTarget.width / 2, event.currentTarget.height / 2);
+						
+						var angle:Number = calcAngle(prevMousePosition, outMousePosition, center);
+	
+						if (angle < 155) {
+							displayLettersRead(event.currentTarget.text + event.currentTarget.text);
+						}
+					} else {
+						clearInterval(timeoutID);
+					}
+					
+					
+				}
+				
+				alreadyRead = false;
+			}
+			
+			private function calcAngle(point1:Array, point2:Array, center:Array):Number {
+				var vector1:Array = new Array(point1[0] - center[0], center[1] - point1[1]);
+				var vector2:Array = new Array(point2[0] - center[0], center[1] - point2[1]);
+				
+				var dotProduct:Number = vector1[0] * vector2[0] + vector1[1] * vector2[1];
+				
+				var length1:Number = calcDistance(vector1, new Array(0, 0));
+				var length2:Number = calcDistance(vector2, new Array(0, 0));
+				
+				var denom:Number = length1 * length2;
+				
+				var prod:Number = denom != 0 ? dotProduct / denom : 0;
+				
+				return Math.acos(prod) * 180 / Math.PI;
+			}
+			
+			private function calcDistance(point1:Array, point2:Array):Number {
+				return Math.sqrt(Math.pow((point2[0] - point1[0]), 2) + Math.pow((point2[1] - point1[1]), 2));
+			}
+			
+			private function onMouseMoveKey(event:Event):void {
+				var centerX:Number = (event.currentTarget.width / 2);
+				var centerY:Number = (event.currentTarget.height / 2);
+			}
+			
+			private function displayLettersRead(text:String):void {
+				lettersRead.text += text;
+				guessWords(lettersRead.text);
+			}
+			
+			private function displayText(text:String):void {
+				textBox.text += text;
+			}
+			
+			private function clearLettersRead():void {
+				lettersRead.text = "";
+			}
+			
+			private function clearTextBox():void {
+				textBox.text = "";
+			}
+			
+			private function mouseDownWordGuessText(event:Event):void {
+				displayText(event.currentTarget.text + " ");
+			}
+			
+			private function guessWords(letters:String):void {
+				var bestWords:Array = dict.findXBestWords(letters, 3);
+				
+				firstWordText.text = bestWords[0];
+				secondWordText.text = bestWords[1];
+				thirdWordText.text = bestWords[2];
+			}
+			
+			protected function windowedapplication1_creationCompleteHandler(event:FlexEvent):void
+			{
+				isMouseDown = false;
+				prevMousePosition = new Array (-1, -1);
+				brush = new DrawingArea(keyGroup);
+				
+				dict = new WordFrequencyList()
+				dict.uploadWordList("wordFrequencyList.txt");
+				
+				isCurrent = false;
+				alreadyRead = false;
+				
+				timeoutID = -1;
+			}
+			
+			
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<s:VGroup left="10" right="10" top="35" bottom="10" horizontalAlign="center">
+		<s:TextArea id="textBox" width="100%" height="42%"/>
+		<s:HGroup width="100%" height="5%" horizontalAlign="center" verticalAlign="middle">
+			<s:TextArea id="lettersRead" width="30%" height="100%" fontFamily="Times New Roman"
+						fontSize="12" verticalAlign="middle"/>
+			<s:Spacer width="7%" height="10"/>
+			<s:TextArea id="firstWordText" width="20%" height="100%" fontFamily="Times New Roman"
+						fontSize="12" verticalAlign="middle" mouseDown="mouseDownWordGuessText(event)"/>
+			<s:TextArea id="secondWordText" width="20%" height="100%" fontFamily="Times New Roman"
+						fontSize="12" verticalAlign="middle" mouseDown="mouseDownWordGuessText(event)"/>
+			<s:TextArea id="thirdWordText" width="20%" height="100%" fontFamily="Times New Roman"
+						fontSize="12" verticalAlign="middle" mouseDown="mouseDownWordGuessText(event)"/>
+		</s:HGroup>
+		<s:BorderContainer id="keyboard" width="100%" height="50%" backgroundColor="#E7E2E2" borderWeight="5" mouseUp="onMouseUp(event)" mouseDown="onMouseDown(event)" mouseMove="onMouseMove(event)" rollOut="onMouseRollOut(event)" >
+			<s:VGroup id="keyGroup" left="5" right="5" top="0" bottom="0" horizontalAlign="center">
+				<mx:HRule width="90%" height="1%"/>
+				<s:HGroup id="topKeys" width="100%" height="23%" horizontalAlign="center"
+						  verticalAlign="middle">
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="qKey" width="7%" height="90%" 
+							 mouseDown="onMouseDownKey(event)" rollOver="onMouseOverKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 text="Q" textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="wKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="W" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="eKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="E" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="rKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="R" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="tKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="T" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="yKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="Y" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="uKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="U" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="iKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="I" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="oKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="O" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="pKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 rollOver="onMouseOverKey(event)" text="P" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+				</s:HGroup>
+				<mx:HRule width="90%" height="1%"/>
+				<s:HGroup id="middleKeys" width="100%" height="23%" horizontalAlign="center"
+						  verticalAlign="middle">
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="aKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="A" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="sKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="S" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="dKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="D" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="fKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="F" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="gKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="G" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="hKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="H" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="jKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="J" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="kKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="K" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="lKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="L" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+				</s:HGroup>
+				<mx:HRule width="90%" height="1%"/>
+				<s:HGroup id="lowerKeys" width="100%" height="23%" horizontalAlign="center"
+						  verticalAlign="middle">
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="shiftKey" width="13%" height="90%" lineThrough="true" text="Shift"
+							 textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="zKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="Z" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="xKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="X" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="cKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="C" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="vKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="V" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="bKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="B" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="nKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="N" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					
+					<s:Label id="mKey" width="7%" height="90%" mouseDown="onMouseDownKey(event)" mouseOut="onMouseOutKey(event)" mouseUp="onMouseUpKey(event)"
+							 mouseOver="onMouseOverKey(event)" text="M" textAlign="center"
+							 verticalAlign="middle"/>
+					
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="enterKey" width="13%" height="90%" lineThrough="true" text="Enter"
+							 textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+				</s:HGroup>
+				<mx:HRule width="90%" height="1%"/>
+				<s:HGroup width="100%" height="23%" horizontalAlign="center" verticalAlign="middle">
+					<s:Spacer width="16%"/>
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="commaKey" width="5%" height="90%" lineThrough="true" text=","
+							 textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="spaceKey" width="50%" height="90%" lineThrough="true" text="Space"
+							 textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="periodKey" width="5%" height="90%" lineThrough="true" text="."
+							 textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+					<s:Label id="backspaceKey" width="16%" height="90%" lineThrough="true"
+							 text="Backspace" textAlign="center" verticalAlign="middle"/>
+					<mx:VRule width="1%" height="75%"/>
+				</s:HGroup>
+				<mx:HRule width="90%" height="1%"/>
+			</s:VGroup>
+		</s:BorderContainer>
+		
+	</s:VGroup>
+	<mx:MenuBar left="0" top="0" width="100%" height="25"></mx:MenuBar>
+</s:WindowedApplication>
